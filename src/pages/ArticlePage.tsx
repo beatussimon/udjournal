@@ -1,32 +1,36 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useSelector } from 'react-redux'
-import { RootState } from '../store'
+import { useSelector, useDispatch } from 'react-redux'
+import { RootState, AppDispatch } from '../store'
+import { fetchArticleCitations, trackArticleView } from '../store/slices/analyticsSlice'
+import { fetchArticleById } from '../store/slices/articlesSlice'
 
 // Article Analytics Component
 const ArticleAnalytics = ({ 
   views, 
   downloads, 
   citations, 
-  googleScholarUrl 
+  googleScholarUrl,
+  citationData
 }: { 
   views: number
   downloads: number
   citations: number
   googleScholarUrl?: string
+  citationData?: {
+    citations?: { title: string; cited_by: number; year?: string }[]
+    citation_count?: number
+  } | null
 }) => {
-  const [citationTrend, setCitationTrend] = useState<{ year: number; count: number }[]>([])
-
-  useEffect(() => {
-    // Sample citation trend data (in production, fetch from Google Scholar API)
-    setCitationTrend([
-      { year: 2020, count: 2 },
-      { year: 2021, count: 5 },
-      { year: 2022, count: 8 },
-      { year: 2023, count: 12 },
-      { year: 2024, count: 15 },
-    ])
-  }, [])
+  // Build citation trend from real data if available
+  const citationTrend = citationData?.citations?.map((cit, idx) => ({
+    year: parseInt(cit.year || '2024'),
+    count: cit.cited_by || 0
+  })) || []
+  
+  // Calculate growth from citation data
+  const growth = citationTrend.length > 1 ? 
+    Math.round(((citationTrend[citationTrend.length - 1]?.count || 0) - (citationTrend[0]?.count || 0)) / Math.max(citationTrend[0]?.count || 1, 1) * 100) : null
 
   return (
     <div className="bg-gray-50 dark:bg-slate-800/50 rounded-lg p-4 mb-6">
@@ -51,7 +55,9 @@ const ArticleAnalytics = ({
           <div className="text-xs text-gray-500 dark:text-slate-400">Citations</div>
         </div>
         <div className="text-center">
-          <div className="text-2xl font-bold text-green-600 dark:text-green-400">+15%</div>
+          <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+            {growth !== null ? `${growth > 0 ? '+' : ''}${growth}%` : 'N/A'}
+          </div>
           <div className="text-xs text-gray-500 dark:text-slate-400">Growth</div>
         </div>
       </div>
@@ -138,24 +144,57 @@ const AcademicImpact = ({
 
 const ArticlePage = () => {
   const { journalPath, articleId } = useParams<{ journalPath: string; articleId: string }>()
+  const dispatch = useDispatch<AppDispatch>()
   const { viewsToday } = useSelector((state: RootState) => state.realtime)
+  const { articleCitations } = useSelector((state: RootState) => state.analytics)
+  const { currentArticle, loading: articleLoading } = useSelector((state: RootState) => state.articles)
   
-  // Sample article data (in production, fetch from API)
-  const articleData = {
-    title: 'Impact of Climate Change on Agricultural Productivity in East Africa: A Comprehensive Review',
-    authors: [
-      { firstName: 'John', lastName: 'Mushi', affiliation: 'University of Dar es Salaam' },
-      { firstName: 'Mary', lastName: 'Kombo', affiliation: 'Sokoine University of Agriculture' }
-    ],
-    datePublished: '2024-01-15',
-    abstract: 'This comprehensive review examines the multifaceted impacts of climate change on agricultural productivity in East Africa. Using a meta-analytic approach, we synthesize findings from 87 peer-reviewed studies conducted between 2010 and 2023. Our analysis reveals significant negative correlations between rising temperatures and crop yields, with maize production projected to decrease by 15-30% by 2050 under current emission scenarios. The study also identifies adaptation strategies that have shown promise in mitigating these impacts, including drought-resistant crop varieties, improved irrigation systems, and climate-smart agricultural practices.',
-    views: 2847,
-    downloads: 456,
-    citations: 23,
-    googleScholarUrl: 'https://scholar.google.com/scholar?q=climate+change+agriculture+east+africa',
-    impactScore: 82,
-    relevanceScore: 91,
-    keywords: ['Climate Change', 'Agriculture', 'East Africa', 'Food Security', 'Adaptation']
+  // Fetch article data from OJS and citations from Serper
+  useEffect(() => {
+    if (journalPath && articleId) {
+      dispatch(fetchArticleById({ journalPath, articleId }))
+      dispatch(fetchArticleCitations({ articleId, journalPath }))
+      // Track the view
+      dispatch(trackArticleView({ articleId, journalId: journalPath }))
+    }
+  }, [dispatch, journalPath, articleId])
+
+  // Build article data from API response or show unavailable
+  const articleData = currentArticle ? {
+    title: typeof currentArticle.title === 'object' ? currentArticle.title.en || currentArticle.title.en_US || '' : currentArticle.title || '',
+    authors: currentArticle.authors?.map((a: { firstName?: string; lastName?: string; affiliation?: string }) => ({
+      firstName: a?.firstName || '',
+      lastName: a?.lastName || '',
+      affiliation: a?.affiliation || ''
+    })) || [],
+    datePublished: currentArticle.datePublished || '',
+    abstract: typeof currentArticle.abstract === 'object' ? currentArticle.abstract.en || currentArticle.abstract.en_US || '' : currentArticle.abstract || '',
+    views: 0, // Would come from Matomo
+    downloads: 0, // Would come from Matomo
+    citations: articleCitations?.citation_count ?? 0,
+    googleScholarUrl: articleCitations?.citations?.[0]?.link || '',
+    keywords: currentArticle.keywords || []
+  } : null
+  
+  // Handle loading and unavailable states
+  if (articleLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 dark:bg-slate-700 rounded w-3/4 mb-4"></div>
+          <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded w-1/2 mb-8"></div>
+          <div className="h-32 bg-gray-200 dark:bg-slate-700 rounded mb-4"></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!articleData && !articleId) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <p className="text-gray-500 dark:text-slate-400">Article not found</p>
+      </div>
+    )
   }
 
   return (
@@ -171,59 +210,64 @@ const ArticlePage = () => {
 
       <article className="bg-white dark:bg-slate-800 rounded-lg shadow-md p-8">
         {/* Article Header */}
-        <h1 className="text-3xl font-serif font-bold text-udsm-dark dark:text-white mb-4">
-          {articleData.title}
-        </h1>
-        
-        {/* Authors */}
-        <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-slate-300 mb-4">
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span>{articleData.authors.map(a => `${a.firstName} ${a.lastName}`).join(', ')}</span>
+        {articleData ? (
+          <>
+            <h1 className="text-3xl font-serif font-bold text-udsm-dark dark:text-white mb-4">
+              {articleData.title}
+            </h1>
+            
+            {/* Authors */}
+            <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-slate-300 mb-4">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span>{articleData.authors.map((a: { firstName: string; lastName: string }) => `${a.firstName} ${a.lastName}`).join(', ')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>Published: {new Date(articleData.datePublished).toLocaleDateString()}</span>
+              </div>
+            </div>
+
+            {/* Keywords */}
+            {articleData.keywords && articleData.keywords.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                {articleData.keywords.map((keyword: string, index: number) => (
+                  <span 
+                    key={index} 
+                    className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 rounded-full"
+                  >
+                    {keyword}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Article Analytics - Embedded */}
+            <ArticleAnalytics 
+              views={articleData.views}
+              downloads={articleData.downloads}
+              citations={articleData.citations}
+              googleScholarUrl={articleData.googleScholarUrl}
+              citationData={articleCitations}
+            />
+
+            {/* Abstract */}
+            <div className="mb-8">
+              <h2 className="text-xl font-serif font-bold text-udsm-primary dark:text-white mb-4">Abstract</h2>
+              <p className="text-gray-600 dark:text-slate-300 leading-relaxed">
+                {articleData.abstract}
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-500 dark:text-slate-400">Article data unavailable</p>
           </div>
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span>Published: {new Date(articleData.datePublished).toLocaleDateString()}</span>
-          </div>
-        </div>
-
-        {/* Keywords */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {articleData.keywords.map((keyword, index) => (
-            <span 
-              key={index} 
-              className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 rounded-full"
-            >
-              {keyword}
-            </span>
-          ))}
-        </div>
-
-        {/* Article Analytics - Embedded */}
-        <ArticleAnalytics 
-          views={articleData.views}
-          downloads={articleData.downloads}
-          citations={articleData.citations}
-          googleScholarUrl={articleData.googleScholarUrl}
-        />
-
-        {/* Academic Impact Indicators */}
-        <AcademicImpact 
-          impactScore={articleData.impactScore}
-          relevanceScore={articleData.relevanceScore}
-        />
-
-        {/* Abstract */}
-        <div className="mb-8">
-          <h2 className="text-xl font-serif font-bold text-udsm-primary dark:text-white mb-4">Abstract</h2>
-          <p className="text-gray-600 dark:text-slate-300 leading-relaxed">
-            {articleData.abstract}
-          </p>
-        </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-wrap gap-4 items-center border-t border-gray-200 dark:border-slate-700 pt-6">
@@ -241,7 +285,7 @@ const ArticlePage = () => {
             View HTML
           </button>
           <span className="text-gray-500 dark:text-slate-400 ml-auto">
-            {viewsToday} views today
+            {viewsToday !== null ? `${viewsToday} views today` : 'View data unavailable'}
           </span>
         </div>
       </article>

@@ -32,7 +32,7 @@ const Footer = () => {
               <li><a href="#" className="hover:text-udsm-gold transition-colors">Author Guidelines</a></li>
               <li><a href="#" className="hover:text-udsm-gold transition-colors">Peer Review Process</a></li>
               <li><a href="#" className="hover:text-udsm-gold transition-colors">Open Access Policy</a></li>
-              <li><a href="#" className="hover:text-udsm-gold transition-colors">FAQ</a></li>
+              <li><Link to="/faq" className="hover:text-udsm-gold transition-colors">FAQ</Link></li>
             </ul>
           </div>
 

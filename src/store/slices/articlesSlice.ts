@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
-import { ojsApi } from '../../services/api'
+import { ojsProxyAPI } from '../../services/api'
 import { Article } from '../../types'
 
 interface ArticlesState {
@@ -19,13 +19,13 @@ const initialState: ArticlesState = {
 }
 
 export const fetchArticles = createAsyncThunk('articles/fetchArticles', async (journalPath: string) => {
-  const response = await ojsApi.get(`/${journalPath}/api/v1/submissions?status=published&apiToken=${import.meta.env.VITE_OJS_API_TOKEN}`)
-  return response.data as unknown as Article[]
+  const response = await ojsProxyAPI.getSubmissions(journalPath, 'published')
+  return response.items || response as unknown as Article[]
 })
 
 export const fetchArticleById = createAsyncThunk('articles/fetchArticleById', async ({ journalPath, articleId }: { journalPath: string; articleId: string }) => {
-  const response = await ojsApi.get(`/${journalPath}/api/v1/submissions/${articleId}?apiToken=${import.meta.env.VITE_OJS_API_TOKEN}`)
-  return response.data as unknown as Article
+  const response = await ojsProxyAPI.getArticle(journalPath, parseInt(articleId))
+  return response as unknown as Article
 })
 
 export const searchArticles = createAsyncThunk('articles/searchArticles', async (query: string) => {

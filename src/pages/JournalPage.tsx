@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { AppDispatch, RootState } from '../store'
 import { fetchIssues } from '../store/slices/journalsSlice'
+import { fetchOJSMetrics, fetchJournalMetrics, trackArticleView } from '../store/slices/analyticsSlice'
 
 // Journal Analytics Header Component
 const JournalAnalyticsHeader = ({ 
@@ -60,7 +61,7 @@ const IssueCard = ({
 }: { 
   issue: { 
     id: number; 
-    title?: string; 
+    title?: string | { en_US?: string }; 
     datePublished?: string; 
     volume?: string; 
     number?: string;
@@ -69,6 +70,12 @@ const IssueCard = ({
   }
   journalPath?: string
 }) => {
+  // Handle localized title
+  const getTitle = () => {
+    if (!issue.title) return `Issue ${issue.id}`
+    if (typeof issue.title === 'string') return issue.title
+    return issue.title?.en_US || `Issue ${issue.id}`
+  }
   return (
     <Link
       to={`/journals/${journalPath}/issues/${issue.id}`}
@@ -85,7 +92,7 @@ const IssueCard = ({
         )}
       </div>
       <h2 className="font-serif font-bold text-udsm-primary dark:text-white mb-2">
-        {issue.title || `Issue ${issue.id}`}
+        {getTitle()}
       </h2>
       {/* Issue-level analytics */}
       <div className="pt-3 border-t border-gray-100 dark:border-slate-700">
@@ -102,35 +109,31 @@ const JournalPage = () => {
   const { journalPath } = useParams<{ journalPath: string }>()
   const dispatch = useDispatch<AppDispatch>()
   const { issues, loading, error } = useSelector((state: RootState) => state.journals)
+  const { ojsMetrics, allMetrics } = useSelector((state: RootState) => state.analytics)
 
   useEffect(() => {
     if (journalPath) {
       dispatch(fetchIssues(journalPath))
+      dispatch(fetchJournalMetrics(journalPath))
+      // Track journal view
+      dispatch(trackArticleView({ articleId: `journal-${journalPath}`, journalId: journalPath }))
     }
   }, [dispatch, journalPath])
 
-  // Sample journal data with embedded analytics (in production, fetch from API)
-  const journalData = {
-    name: journalPath?.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Journal',
-    description: 'A peer-reviewed academic journal publishing research on African history, culture, politics, and development.',
-    views: 12430,
-    downloads: 2340,
-    citations: 145,
-    issuesCount: 48,
-    articlesCount: 245,
-  }
+  // Get journal metrics from API or show unavailable
+  const journalData = ojsMetrics?.journals?.find((j: { path: string }) => j.path === journalPath) || (journalPath ? {
+    name: journalPath.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+    description: 'Academic research journal from University of Dar es Salaam',
+    views: null,
+    downloads: null,
+    citations: null,
+    issuesCount: ojsMetrics?.journals?.find((j: { path: string }) => j.path === journalPath)?.total_issues || null,
+    articlesCount: ojsMetrics?.journals?.find((j: { path: string }) => j.path === journalPath)?.total_articles || null,
+  } : null)
 
-  // Sample issues with embedded analytics
-  const sampleIssues = [
-    { id: 1, title: 'Volume 48, Issue 3', volume: '48', number: '3', datePublished: '2024-01-15', views: 890, downloads: 156 },
-    { id: 2, title: 'Volume 48, Issue 2', volume: '48', number: '2', datePublished: '2023-10-15', views: 765, downloads: 134 },
-    { id: 3, title: 'Volume 48, Issue 1', volume: '48', number: '1', datePublished: '2023-07-15', views: 920, downloads: 178 },
-    { id: 4, title: 'Volume 47, Issue 4', volume: '47', number: '4', datePublished: '2023-04-15', views: 680, downloads: 123 },
-    { id: 5, title: 'Volume 47, Issue 3', volume: '47', number: '3', datePublished: '2023-01-15', views: 720, downloads: 145 },
-    { id: 6, title: 'Volume 47, Issue 2', volume: '47', number: '2', datePublished: '2022-10-15', views: 590, downloads: 98 },
-  ]
-
-  const displayIssues = issues.length > 0 ? issues : sampleIssues
+  // Use issues from API, or show message if unavailable
+  const displayIssues = issues.length > 0 ? issues : []
+  const showNoIssues = !loading && displayIssues.length === 0 && !error
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -143,41 +146,52 @@ const JournalPage = () => {
       {/* Journal Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-serif font-bold text-udsm-dark dark:text-white mb-2 capitalize">
-          {journalData.name}
+          {journalData?.name || 'Journal'}
         </h1>
         <p className="text-gray-600 dark:text-slate-300 max-w-3xl">
-          {journalData.description}
+          {journalData?.description || 'Description unavailable'}
         </p>
       </div>
 
       {/* Journal Analytics - Embedded */}
-      <JournalAnalyticsHeader 
-        views={journalData.views}
-        downloads={journalData.downloads}
-        citations={journalData.citations}
-        issuesCount={journalData.issuesCount}
-        articlesCount={journalData.articlesCount}
-      />
+      {journalData && (
+        <JournalAnalyticsHeader 
+          views={journalData.views ?? 0}
+          downloads={journalData.downloads ?? 0}
+          citations={journalData.citations ?? 0}
+          issuesCount={journalData.issuesCount ?? 0}
+          articlesCount={journalData.articlesCount ?? 0}
+        />
+      )}
 
       <h2 className="text-2xl font-serif font-bold text-udsm-dark dark:text-white mb-6">Issues</h2>
 
-      {loading && <div className="animate-pulse text-gray-500">Loading...</div>}
-      {error && <div className="text-red-600 dark:text-red-400">{error}</div>}
+      {loading && <div className="animate-pulse text-gray-500">Loading issues...</div>}
+      {error && <div className="text-red-600 dark:text-red-400">Failed to load issues: {error}</div>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {displayIssues.map((issue: unknown) => {
-          const i = issue as { 
-            id: number; 
-            title?: string; 
-            datePublished?: string; 
-            volume?: string; 
-            number?: string;
-            views?: number;
-            downloads?: number;
-          }
-          return <IssueCard key={i.id} issue={i} journalPath={journalPath} />
-        })}
-      </div>
+      {showNoIssues && (
+        <div className="text-center py-12 text-gray-500 dark:text-slate-400">
+          <p className="text-lg">No issues found for this journal.</p>
+          <p className="text-sm mt-2">Please check back later when the journal content is available.</p>
+        </div>
+      )}
+
+      {displayIssues.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {displayIssues.map((issue: unknown) => {
+            const i = issue as { 
+              id: number; 
+              title?: string | { en_US?: string }; 
+              datePublished?: string; 
+              volume?: string; 
+              number?: string;
+              views?: number;
+              downloads?: number;
+            }
+            return <IssueCard key={i.id} issue={i} journalPath={journalPath} />
+          })}
+        </div>
+      )}
     </div>
   )
 }

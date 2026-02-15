@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
-import { ojsApi } from '../../services/api'
+import { ojsProxyAPI } from '../../services/api'
 import { Journal, Issue, Article } from '../../types'
 
 interface JournalsState {
@@ -21,25 +21,45 @@ const initialState: JournalsState = {
 }
 
 export const fetchJournals = createAsyncThunk('journals/fetchJournals', async () => {
-  // Fetch journals from OJS - typically from a journals endpoint or publications
-  const response = await ojsApi.get('/innovative-minds/api/v1/submissions?status=published&apiToken=' + import.meta.env.VITE_OJS_API_TOKEN)
-  return response.data as unknown as Journal[]
+  // Fetch journals from OJS via Django backend proxy
+  const response = await ojsProxyAPI.getJournals()
+  // Transform OJS response to Journal format
+  const journalData = response.journals || response
+  const items = journalData.items || journalData || []
+  return items.map((item: { id: number; urlPath?: string; name?: { en_US?: string }; description?: { en_US?: string }; localizedDescription?: string }) => ({
+    id: item.id,
+    path: item.urlPath || '',
+    name: item.name?.en_US || item.name || '',
+    description: item.description?.en_US || item.description || '',
+    articlesCount: 0,
+    issuesCount: 0,
+    views: 0,
+    downloads: 0,
+    citations: 0
+  })) as Journal[]
 })
 
 export const fetchJournalByPath = createAsyncThunk('journals/fetchJournalByPath', async (path: string) => {
-  // For now, we'll fetch submissions and filter
-  const response = await ojsApi.get(`/innovative-minds/api/v1/submissions?status=published&apiToken=${import.meta.env.VITE_OJS_API_TOKEN}`)
-  return response.data as unknown as Journal
+  // This would need to be implemented via the proxy
+  // For now, we'll use the journal path to look up from the journals list
+  const response = await ojsProxyAPI.getJournals()
+  const journalData = response.journals || response
+  const items = journalData.items || journalData || []
+  const journal = items.find((j: { urlPath?: string }) => j.urlPath === path)
+  return journal as unknown as Journal
 })
 
 export const fetchIssues = createAsyncThunk('journals/fetchIssues', async (journalPath: string) => {
-  const response = await ojsApi.get(`/${journalPath}/api/v1/issues?apiToken=${import.meta.env.VITE_OJS_API_TOKEN}`)
-  return response.data as unknown as Issue[]
+  const response = await ojsProxyAPI.getIssues(journalPath)
+  return response.items || response as unknown as Issue[]
 })
 
 export const fetchIssueById = createAsyncThunk('journals/fetchIssueById', async ({ journalPath, issueId }: { journalPath: string; issueId: string }) => {
-  const response = await ojsApi.get(`/${journalPath}/api/v1/issues/${issueId}?apiToken=${import.meta.env.VITE_OJS_API_TOKEN}`)
-  return response.data as unknown as Issue
+  // Fetch issues and find the one matching the ID
+  const response = await ojsProxyAPI.getIssues(journalPath)
+  const items = response.items || response
+  const issue = items.find((i: { id: number }) => i.id === parseInt(issueId))
+  return issue as unknown as Issue
 })
 
 const journalsSlice = createSlice({

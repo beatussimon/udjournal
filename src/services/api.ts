@@ -1,13 +1,9 @@
 import axios from 'axios'
-import { CitationData, CitationTrend } from '../types'
 
 const OJS_BASE_URL = import.meta.env.VITE_OJS_BASE_URL || 'http://localhost:8080'
-const MATOMO_BASE_URL = import.meta.env.VITE_MATOMO_BASE_URL || 'http://localhost:8888'
-const MATOMO_SITE_ID = import.meta.env.VITE_MATOMO_SITE_ID || '1'
-const MATOMO_TOKEN = import.meta.env.VITE_MATOMO_API_TOKEN || ''
-const GA4_MEASUREMENT_ID = import.meta.env.VITE_GA4_MEASUREMENT_ID || ''
+const DJANGO_BASE_URL = import.meta.env.VITE_DJANGO_BASE_URL || 'http://localhost:8000'
 
-// OJS API Client
+// OJS API Client - Direct calls for public content only
 export const ojsApi = axios.create({
   baseURL: OJS_BASE_URL,
   headers: {
@@ -26,382 +22,331 @@ ojsApi.interceptors.response.use(
   }
 )
 
-// Matomo API Client
-export const matomoApi = axios.create({
-  baseURL: MATOMO_BASE_URL,
+// Django Backend API Client - For all analytics and OJS proxy calls
+const djangoApi = axios.create({
+  baseURL: DJANGO_BASE_URL,
   headers: {
-    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
   },
   timeout: 30000,
 })
 
-// Google Analytics 4 (GA4) Event Tracking
-export const ga4 = {
-  // Initialize GA4
-  init: () => {
-    if (typeof window === 'undefined' || !GA4_MEASUREMENT_ID) return
-    
-    // Load GA4 script
-    const script = document.createElement('script')
-    script.async = true
-    script.src = `https://www.googletagmanager.com/gtag/js?id=${GA4_MEASUREMENT_ID}`
-    document.head.appendChild(script)
-    
-    window.dataLayer = window.dataLayer || []
-    window.gtag = function() {
-      window.dataLayer.push(arguments)
-    }
-    window.gtag('js', new Date())
-    window.gtag('config', GA4_MEASUREMENT_ID)
+djangoApi.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('Django API Error:', error.message)
+    return Promise.reject(error)
+  }
+)
+
+// ============================================
+// DJANGO BACKEND API - Analytics & Content Proxy
+// ============================================
+
+export const analyticsAPI = {
+  // Health check
+  healthCheck: async () => {
+    const response = await djangoApi.get('/api/health')
+    return response.data
   },
-  
-  // Track page view
-  pageView: (pagePath: string, pageTitle: string) => {
-    if (typeof window === 'undefined' || !window.gtag) return
-    window.gtag('event', 'page_view', {
-      page_path: pagePath,
-      page_title: pageTitle,
+
+  // Dashboard - Complete analytics data
+  getDashboard: async (period: string = 'month', date: string = 'today') => {
+    const response = await djangoApi.get('/api/dashboard', {
+      params: { period, date }
     })
+    return response.data
   },
-  
-  // Track custom event
-  event: (eventName: string, parameters: Record<string, unknown> = {}) => {
-    if (typeof window === 'undefined' || !window.gtag) return
-    window.gtag('event', eventName, parameters)
+
+  // KPI Summary
+  getKPI: async (period: string = 'day', date: string = 'today') => {
+    const response = await djangoApi.get('/api/kpi', {
+      params: { period, date }
+    })
+    return response.data
   },
-  
-  // Track article views
-  trackArticleView: (articleId: number, articleTitle: string, journalName: string) => {
-    ga4.event('article_view', {
+
+  // Real-time data
+  getRealtime: async (maxRows: number = 10) => {
+    const response = await djangoApi.get('/api/realtime', {
+      params: { maxRows }
+    })
+    return response.data
+  },
+
+  // Live metrics (from Redis)
+  getLiveMetrics: async () => {
+    const response = await djangoApi.get('/api/live-metrics')
+    return response.data
+  },
+
+  // Top Articles
+  getTopArticles: async (period: string = 'week', date: string = 'today', limit: number = 20) => {
+    const response = await djangoApi.get('/api/top-articles', {
+      params: { period, date, limit }
+    })
+    return response.data
+  },
+
+  // Downloads
+  getDownloads: async (period: string = 'month', date: string = 'today', limit: number = 20) => {
+    const response = await djangoApi.get('/api/downloads', {
+      params: { period, date, limit }
+    })
+    return response.data
+  },
+
+  // Countries
+  getCountries: async (period: string = 'month', date: string = 'today') => {
+    const response = await djangoApi.get('/api/countries', {
+      params: { period, date }
+    })
+    return response.data
+  },
+
+  // Geo Heatmap
+  getGeoHeatmap: async () => {
+    const response = await djangoApi.get('/api/geo-heatmap')
+    return response.data
+  },
+
+  // Devices
+  getDevices: async (period: string = 'month', date: string = 'today') => {
+    const response = await djangoApi.get('/api/devices', {
+      params: { period, date }
+    })
+    return response.data
+  },
+
+  // Referrers
+  getReferrers: async (period: string = 'month', date: string = 'today') => {
+    const response = await djangoApi.get('/api/referrers', {
+      params: { period, date }
+    })
+    return response.data
+  },
+
+  // Trends
+  getTrends: async (date: string = 'last30') => {
+    const response = await djangoApi.get('/api/trends', {
+      params: { date }
+    })
+    return response.data
+  },
+
+  // Trending
+  getTrending: async (limit: number = 10) => {
+    const response = await djangoApi.get('/api/trending', {
+      params: { limit }
+    })
+    return response.data
+  },
+
+  // Track view
+  trackView: async (articleId: string, journalId?: string) => {
+    const response = await djangoApi.post('/api/track/view', {
       article_id: articleId,
-      article_title: articleTitle,
-      journal_name: journalName,
+      journal_id: journalId
     })
+    return response.data
   },
-  
-  // Track PDF downloads
-  trackDownload: (fileName: string, fileType: string, articleId?: number) => {
-    ga4.event('file_download', {
-      file_name: fileName,
-      file_type: fileType,
+
+  // Track download
+  trackDownload: async (articleId: string, journalId?: string) => {
+    const response = await djangoApi.post('/api/track/download', {
       article_id: articleId,
+      journal_id: journalId
     })
+    return response.data
   },
-  
-  // Track search
-  trackSearch: (searchTerm: string, resultsCount: number) => {
-    ga4.event('search', {
-      search_term: searchTerm,
-      results_count: resultsCount,
+
+  // Article metrics
+  getArticleMetrics: async (articleId: string, period: string = 'month', date: string = 'today') => {
+    const response = await djangoApi.get(`/api/article/${articleId}/metrics`, {
+      params: { period, date }
     })
-  },
-  
-  // Track citations
-  trackCitation: (articleId: number, citationSource: string) => {
-    ga4.event('citation_view', {
-      article_id: articleId,
-      citation_source: citationSource,
-    })
+    return response.data
   },
 }
 
-// Google Scholar API Service
-// Note: Google Scholar doesn't have a public API, so we simulate the data
-// In production, you would use a third-party scholar API or scraping service
-export const scholarApi = {
-  // Get citation data for an article
-  getCitationData: async (articleId: number, title: string): Promise<CitationData> => {
-    // Simulated citation data (in production, fetch from a scholar API service)
-    const sampleCitations: CitationData = {
-      articleId,
-      totalCitations: Math.floor(Math.random() * 50) + 1,
-      citesPerYear: [
-        { year: 2020, count: Math.floor(Math.random() * 5) },
-        { year: 2021, count: Math.floor(Math.random() * 10) },
-        { year: 2022, count: Math.floor(Math.random() * 15) },
-        { year: 2023, count: Math.floor(Math.random() * 20) },
-        { year: 2024, count: Math.floor(Math.random() * 10) },
-      ],
-      lastUpdated: new Date().toISOString(),
-      googleScholarUrl: `https://scholar.google.com/scholar?q=${encodeURIComponent(title)}`,
-    }
-    
-    // Calculate totals
-    sampleCitations.totalCitations = sampleCitations.citesPerYear.reduce((sum, item) => sum + item.count, 0)
-    
-    return sampleCitations
+// ============================================
+// OJS API PROXY - Through Django Backend
+// ============================================
+
+export const ojsProxyAPI = {
+  // Get journals
+  getJournals: async () => {
+    const response = await djangoApi.get('/api/ojs/journals')
+    return response.data
   },
-  
-  // Get citation trends over time
-  getCitationTrends: async (articleId: number): Promise<CitationTrend[]> => {
-    const currentYear = new Date().getFullYear()
-    const trends: CitationTrend[] = []
-    
-    for (let year = currentYear - 5; year <= currentYear; year++) {
-      trends.push({
-        year,
-        citations: Math.floor(Math.random() * 20),
-      })
-    }
-    
-    return trends
+
+  // Get issues for a journal
+  getIssues: async (journalPath: string, status?: string, page: number = 1) => {
+    const response = await djangoApi.get(`/api/ojs/${journalPath}/issues`, {
+      params: { status, page }
+    })
+    return response.data
   },
-  
-  // Search Google Scholar (returns URL for manual search)
-  getSearchUrl: (query: string): string => {
-    return `https://scholar.google.com/scholar?q=${encodeURIComponent(query)}`
+
+  // Get submissions
+  getSubmissions: async (
+    journalPath: string,
+    status?: string,
+    page: number = 1,
+    itemsPerPage: number = 20
+  ) => {
+    const response = await djangoApi.get(`/api/ojs/${journalPath}/submissions`, {
+      params: { status, page, items_per_page: itemsPerPage }
+    })
+    return response.data
+  },
+
+  // Get article
+  getArticle: async (journalPath: string, articleId: number) => {
+    const response = await djangoApi.get(`/api/ojs/${journalPath}/article/${articleId}`)
+    return response.data
+  },
+
+  // Get journal stats
+  getJournalStats: async (journalPath: string) => {
+    const response = await djangoApi.get(`/api/ojs/${journalPath}/stats`)
+    return response.data
+  },
+
+  // Get journal metrics (comprehensive)
+  getJournalMetrics: async (journalPath: string) => {
+    const response = await djangoApi.get(`/api/ojs/${journalPath}/metrics`)
+    return response.data
+  },
+
+  // Get article metrics (comprehensive)
+  getArticleMetrics: async (journalPath: string, articleId: number) => {
+    const response = await djangoApi.get(`/api/ojs/${journalPath}/article/${articleId}/metrics`)
+    return response.data
+  },
+
+  // Get all journals metrics
+  getAllOJSMetrics: async () => {
+    const response = await djangoApi.get('/api/ojs/all-metrics')
+    return response.data
   },
 }
 
-// Matomo API helper functions
-export const matomoAPI = {
-  // KPI Summary - Total Visits, Unique Visitors, Actions per visit, Bounce Rate
-  getKPISummary: async (period: 'day' | 'week' | 'month' | 'year' = 'day', date: string = 'today') => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'VisitsSummary.get',
-      idSite: MATOMO_SITE_ID,
-      period,
-      date,
-      format: 'JSON',
-      token_auth: MATOMO_TOKEN,
+// ============================================
+// CITATIONS API - Serper API Integration
+// ============================================
+
+export const citationsAPI = {
+  // Search citations
+  searchCitations: async (title: string, author?: string, journal?: string) => {
+    const response = await djangoApi.get('/api/citations/search', {
+      params: { title, author, journal }
     })
-    const response = await matomoApi.post('/', params.toString())
     return response.data
   },
 
-  // Real-time Activity - Live Feed
-  getLiveVisits: async (maxRows: number = 10) => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'Live.getLastVisitsDetails',
-      idSite: MATOMO_SITE_ID,
-      maxRows: maxRows.toString(),
-      format: 'JSON',
-      token_auth: MATOMO_TOKEN,
+  // Get article citations
+  getArticleCitations: async (articleId: string, journalPath?: string, forceRefresh: boolean = false) => {
+    const response = await djangoApi.get(`/api/citations/article/${articleId}`, {
+      params: { journal_path: journalPath, force_refresh: forceRefresh }
     })
-    const response = await matomoApi.post('/', params.toString())
     return response.data
   },
 
-  // Top Articles - Popularity Ranking
-  getTopArticles: async (period: 'day' | 'week' | 'month' | 'year' = 'week', date: string = 'today') => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'Actions.getPageTitles',
-      idSite: MATOMO_SITE_ID,
-      period,
-      date,
-      format: 'JSON',
-      flat: '1',
-      token_auth: MATOMO_TOKEN,
-    })
-    const response = await matomoApi.post('/', params.toString())
+  // Trigger citation update
+  updateCitations: async () => {
+    const response = await djangoApi.post('/api/citations/update')
     return response.data
   },
+}
 
-  // PDF Downloads - Impact Metrics
-  getDownloads: async (period: 'day' | 'week' | 'month' | 'year' = 'month', date: string = 'today') => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'Actions.getDownloads',
-      idSite: MATOMO_SITE_ID,
-      period,
-      date,
-      format: 'JSON',
-      expanded: '1',
-      token_auth: MATOMO_TOKEN,
-    })
-    const response = await matomoApi.post('/', params.toString())
-    return response.data
-  },
+// ============================================
+// ALL METRICS API - Combined Dashboard
+// ============================================
 
-  // Geographic Location - Map Data
-  getCountryData: async (period: 'day' | 'week' | 'month' | 'year' = 'month', date: string = 'today') => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'UserCountry.getCountry',
-      idSite: MATOMO_SITE_ID,
-      period,
-      date,
-      format: 'JSON',
-      token_auth: MATOMO_TOKEN,
+export const allMetricsAPI = {
+  getAllMetrics: async (period: string = 'month', date: string = 'today') => {
+    const response = await djangoApi.get('/api/all-metrics', {
+      params: { period, date }
     })
-    const response = await matomoApi.post('/', params.toString())
     return response.data
   },
+}
 
-  // Acquisition - Traffic Sources
-  getReferrers: async (period: 'day' | 'week' | 'month' | 'year' = 'month', date: string = 'today') => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'Referrers.getReferrerType',
-      idSite: MATOMO_SITE_ID,
-      period,
-      date,
-      format: 'JSON',
-      token_auth: MATOMO_TOKEN,
-    })
-    const response = await matomoApi.post('/', params.toString())
-    return response.data
-  },
+// ============================================
+// OJS API FUNCTIONS - Direct calls for public content only
+// ============================================
 
-  // Device Data - Tech Specs
-  getDevices: async (period: 'day' | 'week' | 'month' | 'year' = 'month', date: string = 'today') => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'DevicesDetection.getType',
-      idSite: MATOMO_SITE_ID,
-      period,
-      date,
-      format: 'JSON',
-      token_auth: MATOMO_TOKEN,
-    })
-    const response = await matomoApi.post('/', params.toString())
-    return response.data
-  },
-
-  // Trend Over Time - Line Charts
-  getTrendOverTime: async (date: string = 'last30') => {
-    const params = new URLSearchParams({
-      module: 'API',
-      method: 'VisitsSummary.get',
-      idSite: MATOMO_SITE_ID,
-      period: 'day',
-      date,
-      format: 'JSON',
-      token_auth: MATOMO_TOKEN,
-    })
-    const response = await matomoApi.post('/', params.toString())
-    return response.data
-  },
-  
-  // Heatmap Data - User Engagement
-  // Note: Requires Matomo Heatmaps plugin (paid). Using fallback with API data.
-  getHeatmapData: async (): Promise<{ day: number; hour: number; value: number }[]> => {
-    try {
-      // Try to get real data from Matomo API - use action times as proxy for engagement
-      const params = new URLSearchParams({
-        module: 'API',
-        method: 'Actions.get',
-        idSite: MATOMO_SITE_ID,
-        period: 'day',
-        date: 'today',
-        format: 'JSON',
-        token_auth: MATOMO_TOKEN,
-      })
-      const response = await matomoApi.post('/', params.toString())
-      
-      // If we get real data, transform it to heatmap format
-      if (response.data && typeof response.data === 'object') {
-        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-        const heatmapData: { day: number; hour: number; value: number }[] = []
-        const currentDay = new Date().getDay()
-        
-        days.forEach((_, dayIndex) => {
-          for (let hour = 0; hour < 24; hour++) {
-            // Generate realistic-looking data based on typical web patterns
-            // Higher activity during work hours, lower on weekends
-            let baseValue = 20
-            if (hour >= 9 && hour <= 17) baseValue = 60
-            if (hour >= 12 && hour <= 14) baseValue = 80
-            if (dayIndex === 0 || dayIndex === 6) baseValue *= 0.5
-            
-            heatmapData.push({
-              day: dayIndex,
-              hour,
-              value: baseValue + Math.floor(Math.random() * 20),
-            })
-          }
-        })
-        
-        return heatmapData
+// Keep original OJS calls for direct access (when needed)
+export const ojsAPI = {
+  // Get published submissions for a journal
+  getPublishedSubmissions: async (journalPath: string, page: number = 0, limit: number = 20) => {
+    const response = await ojsApi.get(`/${journalPath}/api/v1/submissions`, {
+      params: {
+        status: 'published',
+        page,
+        limit,
       }
-      
-      throw new Error('No heatmap data available')
-    } catch (error) {
-      console.warn('Heatmap API unavailable, using fallback data')
-      // Return fallback data based on typical engagement patterns
-      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-      const heatmapData: { day: number; hour: number; value: number }[] = []
-      
-      days.forEach((_, dayIndex) => {
-        for (let hour = 0; hour < 24; hour++) {
-          // Typical web engagement patterns
-          let baseValue = 20
-          if (hour >= 9 && hour <= 17) baseValue = 60
-          if (hour >= 12 && hour <= 14) baseValue = 80
-          if (dayIndex === 0 || dayIndex === 6) baseValue *= 0.5
-          
-          heatmapData.push({
-            day: dayIndex,
-            hour,
-            value: baseValue,
-          })
+    })
+    return response.data
+  },
+
+  // Get single submission
+  getSubmission: async (journalPath: string, submissionId: number) => {
+    const response = await ojsApi.get(`/${journalPath}/api/v1/submissions/${submissionId}`)
+    return response.data
+  },
+
+  // Get issues for a journal
+  getIssues: async (journalPath: string) => {
+    const response = await ojsApi.get(`/${journalPath}/api/v1/issues`)
+    return response.data
+  },
+
+  // Get single issue
+  getIssue: async (journalPath: string, issueId: number) => {
+    const response = await ojsApi.get(`/${journalPath}/api/v1/issues/${issueId}`)
+    return response.data
+  },
+
+  // Get journal info
+  getJournal: async (journalPath: string) => {
+    const response = await ojsApi.get(`/${journalPath}/api/v1/journal`)
+    return response.data
+  },
+
+  // Get all journals (contexts) from OJS
+  getJournals: async () => {
+    try {
+      const response = await ojsApi.get('/innovative-minds/api/v1/contexts', {
+        params: {
+          apiToken: import.meta.env.VITE_OJS_API_TOKEN
         }
       })
-      
-      return heatmapData
+      return response.data
+    } catch (error) {
+      console.error('Failed to fetch journals from OJS:', error)
+      throw error
     }
   },
-  
-  // Get total citations (from OJS - would need a plugin or metadata)
-  getTotalCitations: async (): Promise<number> => {
-    try {
-      // Try to get citation count from OJS submissions
-      const response = await ojsApi.get(`/innovative-minds/api/v1/submissions?status=published&apiToken=${import.meta.env.VITE_OJS_API_TOKEN}`)
-      const submissions = response.data as unknown as { citations?: number }[]
-      
-      if (Array.isArray(submissions)) {
-        return submissions.reduce((sum, sub) => sum + (sub.citations || 0), 0)
+
+  // Search submissions
+  searchSubmissions: async (journalPath: string, query: string) => {
+    const response = await ojsApi.get(`/${journalPath}/api/v1/submissions`, {
+      params: {
+        status: 'published',
+        search: query,
       }
-      return 0
-    } catch (error) {
-      console.warn('Could not fetch citations from OJS:', error)
-      return 0
-    }
-  },
-  
-  // Get trending journals (from OJS submissions with view counts)
-  getTrendingJournals: async (): Promise<{ id: number; name: string; views: number; downloads: number; citations: number }[]> => {
-    try {
-      const response = await ojsApi.get(`/innovative-minds/api/v1/submissions?status=published&apiToken=${import.meta.env.VITE_OJS_API_TOKEN}`)
-      const submissions = response.data as unknown as { id?: number; journal?: { name?: string }; views?: number; downloads?: number; citations?: number }[]
-      
-      if (Array.isArray(submissions)) {
-        // Group by journal and aggregate metrics
-        const journalMap = new Map<string, { id: number; name: string; views: number; downloads: number; citations: number }>()
-        
-        submissions.forEach(sub => {
-          const journalName = sub.journal?.name || 'Unknown Journal'
-          const existing = journalMap.get(journalName)
-          
-          if (existing) {
-            existing.views += sub.views || 0
-            existing.downloads += sub.downloads || 0
-            existing.citations += sub.citations || 0
-          } else {
-            journalMap.set(journalName, {
-              id: sub.id || Math.random(),
-              name: journalName,
-              views: sub.views || 0,
-              downloads: sub.downloads || 0,
-              citations: sub.citations || 0,
-            })
-          }
-        })
-        
-        return Array.from(journalMap.values()).slice(0, 4)
-      }
-      return []
-    } catch (error) {
-      console.warn('Could not fetch trending journals from OJS:', error)
-      return []
-    }
+    })
+    return response.data
   },
 }
 
-// Cache implementation
+// ============================================
+// CACHE IMPLEMENTATION
+// ============================================
+
 interface CacheEntry<T> {
   data: T
   timestamp: number
@@ -427,10 +372,22 @@ export function clearCache(): void {
   cache.clear()
 }
 
-// TypeScript declaration for window.gtag
-declare global {
-  interface Window {
-    gtag: (command: string, ...args: unknown[]) => void
-    dataLayer: unknown[]
-  }
+// ============================================
+// SSE/WS URL Configuration
+// ============================================
+
+export const SSE_URL = `${DJANGO_BASE_URL}/api/sse`
+export const WS_URL = `${DJANGO_BASE_URL.replace('http', 'ws')}/ws/analytics/`
+
+// Backward compatibility - map old matomoAPI to new analyticsAPI
+export const matomoAPI = {
+  ...analyticsAPI,
+  // Add missing method names for backward compatibility
+  getKPISummary: analyticsAPI.getKPI,
+  getTopArticles: analyticsAPI.getTopArticles,
+  getDownloads: analyticsAPI.getDownloads,
+  getCountryData: analyticsAPI.getCountries,
+  getDevices: analyticsAPI.getDevices,
+  getReferrers: analyticsAPI.getReferrers,
+  getTrendOverTime: analyticsAPI.getTrends,
 }

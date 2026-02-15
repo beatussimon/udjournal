@@ -241,14 +241,14 @@ export interface SearchResult {
 
 // Dashboard Analytics Types
 export interface DashboardMetrics {
-  totalViews: number
-  totalDownloads: number
-  totalCitations: number
-  activeUsers: number
-  viewsTrend: number
-  downloadsTrend: number
-  citationsTrend: number
-  usersTrend: number
+  totalViews: number | null
+  totalDownloads: number | null
+  totalCitations: number | null
+  activeUsers: number | null
+  viewsTrend: number | null
+  downloadsTrend: number | null
+  citationsTrend: number | null
+  usersTrend: number | null
 }
 
 export interface EngagementData {

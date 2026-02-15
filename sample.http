@@ -142,3 +142,9 @@ idSite={{siteId}}
 &date=last30
 &format=JSON
 &token_auth={{token}}
+
+
+###
+### Get Journal Context Info
+GET http://localhost:8080/index.php/innovative-minds/api/v1/contexts/1
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE

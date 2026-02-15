@@ -1,10 +1,22 @@
-import { useState } from 'react'
-import { useSelector } from 'react-redux'
-import { RootState } from '../store'
+import { useState, useEffect } from 'react'
+import { useSelector, useDispatch } from 'react-redux'
+import { RootState, AppDispatch } from '../store'
+import { fetchTrendingJournals, fetchTopArticles } from '../store/slices/analyticsSlice'
 
 const AnalyticsOverlay = () => {
   const [isOpen, setIsOpen] = useState(false)
-  const { topArticles, topJournals, recentEvents } = useSelector((state: RootState) => state.realtime)
+  const dispatch = useDispatch<AppDispatch>()
+  const { topArticles: realtimeTopArticles, topJournals, recentEvents } = useSelector((state: RootState) => state.realtime)
+  const { trendingJournals, topArticles: analyticsTopArticles } = useSelector((state: RootState) => state.analytics)
+
+  // Use analytics data if available, fallback to realtime data
+  const displayTopArticles = analyticsTopArticles.length > 0 ? analyticsTopArticles : realtimeTopArticles
+  const displayTrendingJournals = trendingJournals.length > 0 ? trendingJournals : topJournals
+
+  useEffect(() => {
+    dispatch(fetchTrendingJournals())
+    dispatch(fetchTopArticles())
+  }, [dispatch])
 
   return (
     <>
@@ -52,15 +64,15 @@ const AnalyticsOverlay = () => {
               Trending Articles
             </h3>
             <div className="space-y-2">
-              {topArticles.length > 0 ? (
-                topArticles.slice(0, 5).map((article, index) => (
-                  <div key={article.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              {displayTopArticles.length > 0 ? (
+                displayTopArticles.slice(0, 5).map((article: { label?: string; title?: string; nb_hits?: number; views?: number }, index: number) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-gray-400">#{index + 1}</span>
-                      <span className="text-sm truncate max-w-[200px]">{article.title}</span>
+                      <span className="text-sm truncate max-w-[200px]">{article.label || article.title}</span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      <span>{article.views} views</span>
+                      <span>{(article.nb_hits || article.views || 0).toLocaleString()} views</span>
                     </div>
                   </div>
                 ))
@@ -79,15 +91,15 @@ const AnalyticsOverlay = () => {
               Top Journals
             </h3>
             <div className="space-y-2">
-              {topJournals.length > 0 ? (
-                topJournals.slice(0, 5).map((journal, index) => (
-                  <div key={journal.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              {displayTrendingJournals.length > 0 ? (
+                displayTrendingJournals.slice(0, 5).map((journal: { id?: number; name: string; views?: number }, index: number) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-gray-400">#{index + 1}</span>
                       <span className="text-sm truncate max-w-[200px]">{journal.name}</span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      <span>{journal.views} views</span>
+                      <span>{(journal.views || 0).toLocaleString()} views</span>
                     </div>
                   </div>
                 ))

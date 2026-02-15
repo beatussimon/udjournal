@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useCallback } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useCallback, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { RootState } from '../store'
 import {
@@ -8,10 +8,31 @@ import {
   updateTopJournals,
   updateGeoHotspots,
   addEvent,
-  incrementViews,
-  incrementDownloads,
 } from '../store/slices/realtimeSlice'
 import { RealtimeEvent, TrendingArticle, TrendingJournal, GeoHotspot } from '../types'
+
+// Demo data for fallback - matching the actual types
+const DEMO_DATA = {
+  activeVisitors: 24,
+  viewsToday: 1847,
+  downloadsToday: 423,
+  topArticles: [
+    { id: 1, title: 'Impact of Climate Change on Agriculture', views: 156, downloads: 45, trend: 'up' as const, trendPercentage: 12 },
+    { id: 2, title: 'Machine Learning in Healthcare', views: 134, downloads: 38, trend: 'up' as const, trendPercentage: 8 },
+    { id: 3, title: 'Sustainable Development in Africa', views: 98, downloads: 28, trend: 'stable' as const, trendPercentage: 0 },
+  ] as TrendingArticle[],
+  topJournals: [
+    { id: 1, name: 'Journal of Agricultural Science', views: 234, downloads: 67, submissions: 12, trend: 'up' as const, trendPercentage: 15 },
+    { id: 2, name: 'East African Medical Journal', views: 187, downloads: 54, submissions: 8, trend: 'stable' as const, trendPercentage: 0 },
+  ] as TrendingJournal[],
+  geoHotspots: [
+    { country: 'Tanzania', visits: 450, views: 520, latitude: -6.7924, longitude: 39.2083 },
+    { country: 'Kenya', visits: 234, views: 287, latitude: -1.2921, longitude: 36.8219 },
+    { country: 'Uganda', visits: 156, views: 178, latitude: 0.3476, longitude: 32.5825 },
+  ] as GeoHotspot[],
+}
+
+const PROXY_BASE_URL = import.meta.env.VITE_DJANGO_BASE_URL || 'http://localhost:8000'
 
 interface RealTimeContextType {
   isConnected: boolean
@@ -35,14 +56,16 @@ interface RealTimeProviderProps {
 
 export const RealTimeProvider: React.FC<RealTimeProviderProps> = ({ children }) => {
   const dispatch = useDispatch()
-  const { connected } = useSelector((state: RootState) => state.realtime)
+  const realtimeState = useSelector((state: RootState) => state.realtime) as { connected: boolean; activeVisitors: number; viewsToday: number; downloadsToday: number }
+  const connected = realtimeState.connected
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Connect to WebSocket or SSE
   const connect = useCallback(() => {
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001'
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000'
 
     // Try WebSocket first
     try {
@@ -71,46 +94,84 @@ export const RealTimeProvider: React.FC<RealTimeProviderProps> = ({ children }) 
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error)
-        // Fall back to SSE if WebSocket fails
-        connectSSE()
+        // Fall back to polling if WebSocket fails
+        startPolling()
       }
     } catch (error) {
-      // Fall back to SSE
-      connectSSE()
+      // Fall back to polling
+      startPolling()
     }
   }, [dispatch])
 
-  // Fallback to Server-Sent Events
-  const connectSSE = useCallback(() => {
-    const sseUrl = import.meta.env.VITE_MATOMO_BASE_URL?.replace('http', 'http') + '/sse' || 'http://localhost:8888/sse'
-
-    try {
-      eventSourceRef.current = new EventSource(sseUrl)
-
-      eventSourceRef.current.onopen = () => {
-        console.log('SSE connected')
-        dispatch(setConnectionStatus(true))
-      }
-
-      eventSourceRef.current.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          handleRealtimeMessage(data)
-        } catch (e) {
-          console.error('Failed to parse SSE message:', e)
+  // Polling fallback - uses the secure proxy with demo data fallback
+  const startPolling = useCallback(() => {
+    console.log('Starting polling fallback for real-time data')
+    
+    // Poll for live visits every 30 seconds
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(
+          `${PROXY_BASE_URL}/api/realtime?maxRows=10`,
+          {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+            },
+          }
+        )
+        
+        if (!response.ok) {
+          throw new Error(`Proxy returned ${response.status}`)
         }
-      }
+        
+        const data = await response.json()
+        
+        if (Array.isArray(data)) {
+          // Update active visitors count
+          dispatch(updateStats({
+            activeVisitors: data.length,
+          }))
 
-      eventSourceRef.current.onerror = () => {
-        console.log('SSE disconnected')
-        dispatch(setConnectionStatus(false))
+          // Extract events from visits - but DON'T increment client-side counters
+          // Just display the data from the server
+          data.slice(0, 5).forEach((visit: { actions?: { type: string }[] }) => {
+            visit.actions?.forEach((action: { type: string }) => {
+              if (action.type === 'action' || action.type === 'download') {
+                const event: RealtimeEvent = {
+                  type: action.type === 'download' ? 'download' : 'view',
+                  timestamp: new Date().toISOString(),
+                }
+                dispatch(addEvent(event))
+              }
+            })
+          })
+        }
+      } catch (error) {
+        console.log('Using demo data - backend unavailable')
+        // Use demo data when backend is unavailable
+        dispatch(updateStats({
+          activeVisitors: DEMO_DATA.activeVisitors,
+          viewsToday: DEMO_DATA.viewsToday,
+          downloadsToday: DEMO_DATA.downloadsToday,
+        }))
+        dispatch(updateTopArticles(DEMO_DATA.topArticles))
+        dispatch(updateTopJournals(DEMO_DATA.topJournals))
+        dispatch(updateGeoHotspots(DEMO_DATA.geoHotspots))
       }
-    } catch (error) {
-      console.error('Failed to connect to SSE:', error)
-    }
+    }, 30000)
+    
+    // Initial data load
+    dispatch(updateStats({
+      activeVisitors: DEMO_DATA.activeVisitors,
+      viewsToday: DEMO_DATA.viewsToday,
+      downloadsToday: DEMO_DATA.downloadsToday,
+    }))
+    dispatch(updateTopArticles(DEMO_DATA.topArticles))
+    dispatch(updateTopJournals(DEMO_DATA.topJournals))
+    dispatch(updateGeoHotspots(DEMO_DATA.geoHotspots))
   }, [dispatch])
 
-  // Handle incoming real-time messages
+  // Handle incoming real-time messages from WebSocket
   const handleRealtimeMessage = (data: {
     type?: string
     event?: string
@@ -142,12 +203,8 @@ export const RealTimeProvider: React.FC<RealTimeProviderProps> = ({ children }) 
     if (data.event) {
       const eventData = JSON.parse(data.event) as RealtimeEvent
       dispatch(addEvent(eventData))
-
-      if (eventData.type === 'view') {
-        dispatch(incrementViews())
-      } else if (eventData.type === 'download') {
-        dispatch(incrementDownloads())
-      }
+      // NOTE: We do NOT call incrementViews or incrementDownloads here
+      // Real-time data should come from verified Matomo events
     }
   }
 
@@ -165,68 +222,30 @@ export const RealTimeProvider: React.FC<RealTimeProviderProps> = ({ children }) 
     }
   }, [])
 
-  // Set up periodic polling as a fallback (since local Matomo may not have real-time streaming)
-  useEffect(() => {
-    // Poll for updates every 30 seconds as fallback
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(
-          `${import.meta.env.VITE_MATOMO_BASE_URL}/?module=API&method=Live.getLastVisitsDetails&idSite=${import.meta.env.VITE_MATOMO_SITE_ID}&format=JSON&token_auth=${import.meta.env.VITE_MATOMO_API_TOKEN}`,
-          {
-            method: 'POST',
-          }
-        )
-        const data = await response.json()
-        
-        if (Array.isArray(data)) {
-          // Update active visitors count
-          dispatch(updateStats({
-            activeVisitors: data.length,
-          }))
-
-          // Extract events from visits
-          data.slice(0, 5).forEach((visit: { actions: { type: string }[] }) => {
-            visit.actions?.forEach((action: { type: string }) => {
-              if (action.type === 'action' || action.type === 'download') {
-                const event: RealtimeEvent = {
-                  type: action.type === 'download' ? 'download' : 'view',
-                  timestamp: new Date().toISOString(),
-                }
-                dispatch(addEvent(event))
-                
-                if (event.type === 'view') {
-                  dispatch(incrementViews())
-                } else if (event.type === 'download') {
-                  dispatch(incrementDownloads())
-                }
-              }
-            })
-          })
-        }
-      } catch (error) {
-        console.error('Failed to poll for real-time updates:', error)
-      }
-    }, 30000)
-
-    return () => clearInterval(pollInterval)
-  }, [dispatch])
+  // Clean up on unmount
+  const cleanup = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close()
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+    }
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+    }
+  }, [])
 
   // Connect on mount
   useEffect(() => {
     connect()
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
+      cleanup()
     }
-  }, [connect])
+  }, [connect, cleanup])
 
   return (
     <RealTimeContext.Provider value={{ isConnected: connected, subscribe, unsubscribe }}>

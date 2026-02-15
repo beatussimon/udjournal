@@ -10,6 +10,7 @@ services:
       - "3000:80"
     environment:
       - VITE_OJS_BASE_URL=http://ojs:8080
+      - VITE_DJANGO_BASE_URL=http://backend:8000
       - VITE_MATOMO_BASE_URL=http://matomo:8085
       - VITE_MATOMO_SITE_ID=1
       - VITE_WS_URL=ws://redis:3001
@@ -90,6 +91,34 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    networks:
+      - udsm-network
+    restart: unless-stopped
+
+  # Django Backend (Analytics Gateway)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - DJANGO_SECRET_KEY=django-secret-key-change-in-production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - OJS_BASE_URL=http://ojs:8080
+      - OJS_API_KEY=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE
+      - OJS_JOURNALS=innovative-minds:1,bright-tomorrow:2
+      - MATOMO_BASE_URL=http://matomo:8085/index.php
+      - MATOMO_TOKEN=4f5c1f091222053cfd1c32ea6a30ff95
+      - MATOMO_SITE_ID=1
+      - SERPER_API_KEY=5adad16e672b388c52d5f12330b2edc673bd2f66
+    depends_on:
+      - redis
+      - ojs
+      - matomo
     networks:
       - udsm-network
     restart: unless-stopped
