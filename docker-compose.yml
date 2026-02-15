@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # React Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_OJS_BASE_URL=http://ojs:8080
+      - VITE_MATOMO_BASE_URL=http://matomo:8085
+      - VITE_MATOMO_SITE_ID=1
+      - VITE_WS_URL=ws://redis:3001
+    depends_on:
+      - ojs
+      - matomo
+    networks:
+      - udsm-network
+    restart: unless-stopped
+
+  # Open Journal Systems (OJS)
+  ojs:
+    image: pkp/ojs:latest
+    ports:
+      - "8080:80"
+    environment:
+      - MYSQL_HOST=ojs-db
+      - MYSQL_PORT=3306
+      - MYSQL_USERNAME=ojs
+      - MYSQL_PASSWORD=ojs_password
+      - MYSQL_DATABASE=ojs
+    volumes:
+      - ojs-data:/var/www/html
+    depends_on:
+      - ojs-db
+    networks:
+      - udsm-network
+    restart: unless-stopped
+
+  # OJS Database
+  ojs-db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=ojs
+      - MYSQL_USER=ojs
+      - MYSQL_PASSWORD=ojs_password
+    volumes:
+      - ojs-db-data:/var/lib/mysql
+    networks:
+      - udsm-network
+    restart: unless-stopped
+
+  # Matomo Analytics
+  matomo:
+    image: matomo:latest
+    ports:
+      - "8085:80"
+    environment:
+      - MATOMO_DATABASE_HOST=matomo-db
+      - MATOMO_DATABASE_USERNAME=matomo
+      - MATOMO_DATABASE_PASSWORD=matomo_password
+      - MATOMO_DATABASE_DBNAME=matomo
+    volumes:
+      - matomo-data:/var/www/html
+    depends_on:
+      - matomo-db
+    networks:
+      - udsm-network
+    restart: unless-stopped
+
+  # Matomo Database
+  matomo-db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=matomo
+      - MYSQL_USER=matomo
+      - MYSQL_PASSWORD=matomo_password
+    volumes:
+      - matomo-db-data:/var/lib/mysql
+    networks:
+      - udsm-network
+    restart: unless-stopped
+
+  # Optional: Redis for WebSocket real-time updates
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - udsm-network
+    restart: unless-stopped
+
+networks:
+  udsm-network:
+    driver: bridge
+
+volumes:
+  ojs-data:
+  ojs-db-data:
+  matomo-data:
+  matomo-db-data:

@@ -1,0 +1,144 @@
+###########################################################
+# OJS 3.5 REST API – Innovative Minds Journal Examples
+# API key included directly in the URL for testing
+###########################################################
+
+### Get All Users
+GET http://localhost:8080/index.php/innovative-minds/api/v1/users?apiToken=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE
+
+Accept: application/json
+
+###
+
+### Get a Specific User (replace {userId})
+GET http://localhost:8080/index.php/innovative-minds/api/v1/users/{userId}?apiToken=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE
+Accept: application/json
+
+###
+
+### Get All Submissions
+GET http://localhost:8080/index.php/innovative-minds/api/v1/submissions?apiToken=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE
+Accept: application/json
+
+###
+
+### Get Published Submissions
+GET http://localhost:8080/index.php/innovative-minds/api/v1/submissions?status=published&apiToken=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE
+Accept: application/json
+
+###
+
+### Get Issues
+GET http://localhost:8080/index.php/innovative-minds/api/v1/issues?apiToken=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE
+Accept: application/json
+
+###
+
+### Get a Specific Submission (replace {submissionId})
+GET http://localhost:8080/index.php/innovative-minds/api/v1/submissions/{submissionId}?apiToken=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.ImMxMTYzMDFjYzIzMjQ2M2FmYjVmOWVmODkxYTdiNzNkMTgzODgzOTci.Y0IFINIrEZBXULDkup4CpvT-jqba3P4lzZhP3FLYsfE
+Accept: application/json
+
+
+
+
+@baseUrl = http://localhost:8085/index.php
+@token = 4f5c1f091222053cfd1c32ea6a30ff95
+@siteId = 1
+
+### 1. KPI SUMMARY (Main Dashboard Tiles)
+# Use this for: Total Visits, Unique Visitors, Actions per visit, and Bounce Rate.
+POST {{baseUrl}}?module=API&method=VisitsSummary.get
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&period=day
+&date=today
+&format=JSON
+&token_auth={{token}}
+
+
+### 2. REAL-TIME ACTIVITY (Live Feed)
+# Use this for: "Who is on the site right now" and their last actions.
+POST {{baseUrl}}?module=API&method=Live.getLastVisitsDetails
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&maxRows=10
+&format=JSON
+&token_auth={{token}}
+
+
+### 3. TOP ARTICLES (Popularity Ranking)
+# Use this for: "Most Viewed Articles". Added 'flat=1' to show full names clearly.
+POST {{baseUrl}}?module=API&method=Actions.getPageTitles
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&period=week
+&date=today
+&format=JSON
+&flat=1
+&token_auth={{token}}
+
+
+### 4. PDF DOWNLOADS (Impact Metrics)
+# Use this for: Tracking PDF/Galley downloads.
+POST {{baseUrl}}?module=API&method=Actions.getDownloads
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&period=month
+&date=today
+&format=JSON
+&expanded=1
+&token_auth={{token}}
+
+
+### 5. GEOGRAPHIC LOCATION (Map Data)
+# Use this for: "Visitor Locations".
+# Note: Localhost/127.0.0.1 might show as 'Unknown' until you are live.
+POST {{baseUrl}}?module=API&method=UserCountry.getCountry
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&period=month
+&date=today
+&format=JSON
+&token_auth={{token}}
+
+
+### 6. ACQUISITION (Traffic Sources)
+# Use this for: Pie chart showing if users came from Google, Social, or Direct.
+POST {{baseUrl}}?module=API&method=Referrers.getReferrerType
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&period=month
+&date=today
+&format=JSON
+&token_auth={{token}}
+
+
+### 7. DEVICE DATA (Tech Specs)
+# Use this for: Mobile vs. Desktop vs. Tablet breakdown.
+POST {{baseUrl}}?module=API&method=DevicesDetection.getType
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&period=month
+&date=today
+&format=JSON
+&token_auth={{token}}
+
+
+### 8. TREND OVER TIME (Line Charts)
+# Use this for: Graphing the last 30 days of traffic.
+# Returns an object where keys are dates.
+POST {{baseUrl}}?module=API&method=VisitsSummary.get
+Content-Type: application/x-www-form-urlencoded
+
+idSite={{siteId}}
+&period=day
+&date=last30
+&format=JSON
+&token_auth={{token}}
